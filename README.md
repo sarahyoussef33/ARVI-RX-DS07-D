@@ -50,6 +50,18 @@ python eval/run_evaluation.py --mode toy \
   --db-path /tmp/assistant-radio-evidence.sqlite
 ```
 
+Commandes finales recommandées pour le livrable :
+
+```powershell
+python -m pytest -q
+python -m compileall -q src api app eval finetuning tests
+python eval/run_evaluation.py --mode toy --out-dir outputs --db-path outputs/assistant_radio.sqlite
+uvicorn api.main:app --reload
+streamlit run app/streamlit_app.py
+```
+
+Le prototype est pédagogique, non clinique, et ne doit pas être utilisé pour diagnostiquer un patient.
+
 Ce smoke test vérifie la structure du dépôt, le contrat du dataset synthétique, le schéma de sortie, les garde-fous, l'API de démonstration, la compilation Python et l'évaluation jouet.
 
 ## API de démonstration
@@ -116,3 +128,7 @@ Les pistes avancées doivent rester expérimentales, traçables et justifiées. 
 Le code pédagogique du dépôt est publié sous licence MIT. **Les datasets externes, modèles et bibliothèques utilisés conservent leurs licences propres** : les étudiants doivent vérifier et documenter les droits d'usage avant toute expérimentation.
 
 Exigence minimale : indiquer dans le rapport la source, la version, la licence ou les conditions d'accès, les restrictions de redistribution, les traitements d'anonymisation et les limites d'interprétation. Aucun fichier patient réel, même pseudonymisé, ne doit être ajouté au dépôt sans autorisation explicite et traçable.
+
+## Note SQLite et OneDrive
+
+Pour eviter les erreurs SQLite liees a la synchronisation OneDrive, il est recommande d'utiliser un chemin de base de donnees hors dossier synchronise pour la demonstration, ou de definir ASSISTANT_RADIO_DB_PATH.

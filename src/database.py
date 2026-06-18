@@ -8,7 +8,11 @@ SCHEMA_PATH = Path(__file__).resolve().parents[1] / "sql" / "schema.sql"
 
 
 def connect(db_path: str | Path = "medical_ai_evidence.sqlite") -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=OFF")
     conn.row_factory = sqlite3.Row
     return conn
 

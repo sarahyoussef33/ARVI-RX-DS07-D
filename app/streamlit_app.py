@@ -5,8 +5,7 @@ from pathlib import Path
 import streamlit as st
 from PIL import Image
 
-from src.inference import toy_predict
-from src.guardrails import apply_safety_guardrails
+from src.pipeline import run_pipeline
 
 st.set_page_config(page_title="Assistant radiologue virtuel", layout="wide")
 st.title("Assistant radiologue virtuel — prototype pédagogique")
@@ -25,7 +24,7 @@ if uploaded:
     with col1:
         st.image(Image.open(tmp_path), caption="Image uploadée", use_container_width=True)
     with col2:
-        pred = apply_safety_guardrails(toy_predict(tmp_path, mode=mode))
+        pred = run_pipeline(tmp_path, mode=mode)
         st.metric("Classe", pred["predicted_class"])
         st.metric("Confiance", pred["confidence"])
         st.write("**Observations**", pred["visual_evidence"])

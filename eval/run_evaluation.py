@@ -9,10 +9,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from src.inference import toy_predict
-from src.guardrails import apply_safety_guardrails, validate_prediction
-from src.metrics import summarize_metrics
-from src.database import insert_run, init_db
+from src.guardrails import validate_prediction
+from src.metrics import confusion_matrix, per_class_metrics, specificity_metrics, summarize_metrics
+from src.database import init_db
+from src.pipeline import run_pipeline
 
 
 def read_cases(path: Path) -> list[dict]:
@@ -34,20 +34,22 @@ def run(mode: str, db_path: Path) -> tuple[list[dict], dict]:
     init_db(db_path)
     for case in cases:
         image_path = ROOT / case['image_path']
-        pred = apply_safety_guardrails(toy_predict(image_path, mode=mode))
+        pred = run_pipeline(image_path, mode=mode, db_path=db_path)
         valid, errors = validate_prediction(pred)
         row = {
             'case_id': case['case_id'],
             'label': case['label'],
+            'expected_label': case['label'],
+            'filename': image_path.name,
             'predicted_class': pred['predicted_class'],
             'confidence': pred['confidence'],
             'json_valid': valid,
             'warning': pred.get('warning', ''),
             'latency_ms': pred.get('latency_ms', 0),
             'guardrail_errors': ';'.join(errors),
+            'interpretation_note': 'technical validation only; not medical performance',
         }
         rows.append(row)
-        insert_run(db_path, case['case_id'], str(image_path), pred)
     metrics = summarize_metrics(rows)
     return rows, metrics
 
@@ -65,6 +67,11 @@ def main() -> None:
     for mode in modes:
         rows, metrics = run(mode, args.db_path)
         write_csv(out_dir / f'{mode}_predictions.csv', rows)
+        y_true = [row['label'] for row in rows]
+        y_pred = [row['predicted_class'] for row in rows]
+        write_csv(out_dir / f'{mode}_confusion_matrix.csv', confusion_matrix(y_true, y_pred))
+        write_csv(out_dir / f'{mode}_per_class_metrics.csv', per_class_metrics(y_true, y_pred))
+        write_csv(out_dir / f'{mode}_specificity_metrics.csv', specificity_metrics(y_true, y_pred))
         (out_dir / f'{mode}_metrics.json').write_text(json.dumps(metrics, indent=2), encoding='utf-8')
         summary.append({'mode': mode, **metrics})
     write_csv(out_dir / 'before_after_summary.csv', summary)

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 
@@ -16,6 +17,7 @@ from api.main import health
 from src.guardrails import WARNING_TEXT, apply_safety_guardrails, validate_prediction
 from src.inference import toy_predict
 from src.metrics import summarize_metrics
+from src.pipeline import run_pipeline
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +36,7 @@ def test_repository_student_contract_is_present() -> None:
         "data/synthetic_cases.csv",
         "src/inference.py",
         "src/guardrails.py",
+        "src/pipeline.py",
         "api/main.py",
         "eval/run_evaluation.py",
         "prompts/json_schema.md",
@@ -84,9 +87,32 @@ def test_prediction_schema_warning_and_guardrails() -> None:
     assert "not a validated medical model" in pred["limitations"]
 
 
-def test_python_source_tree_compiles() -> None:
-    for folder in ("src", "api", "app", "eval", "finetuning", "tests"):
-        assert compileall.compile_dir(ROOT / folder, quiet=1)
+def test_run_pipeline_returns_valid_json_and_logs_sqlite(tmp_path: Path) -> None:
+    image_path = ROOT / "data" / "sample_images" / "CXR_SYN_002_suspected_opacity.png"
+    db_path = tmp_path / "pipeline.sqlite"
+    pred = run_pipeline(image_path, mode="improved", db_path=db_path)
+    valid, errors = validate_prediction(pred)
+
+    assert valid, errors
+    assert pred["warning"] == WARNING_TEXT
+    assert pred["predicted_class"] in {"normal", "suspected_opacity", "uncertain"}
+    assert "visual_evidence" in pred
+    assert db_path.exists()
+
+    conn = sqlite3.connect(db_path)
+    count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+    conn.close()
+    assert count == 1
+
+
+def test_python_source_tree_compiles(tmp_path: Path) -> None:
+    old_prefix = sys.pycache_prefix
+    sys.pycache_prefix = str(tmp_path / "pycache")
+    try:
+        for folder in ("src", "api", "app", "eval", "finetuning", "tests"):
+            assert compileall.compile_dir(ROOT / folder, quiet=1)
+    finally:
+        sys.pycache_prefix = old_prefix
 
 
 def test_invalid_model_output_falls_back_to_uncertain() -> None:
@@ -112,7 +138,8 @@ def test_metrics_and_api_health_contract() -> None:
     assert metrics["warning_rate"] == 1.0
 
 
-def test_api_predict_preserves_uploaded_case_signal() -> None:
+def test_api_predict_preserves_uploaded_case_signal(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ASSISTANT_RADIO_DB_PATH", str(tmp_path / "api.sqlite"))
     client = TestClient(app)
     image_path = ROOT / "data" / "sample_images" / "CXR_SYN_002_suspected_opacity.png"
 
@@ -126,6 +153,8 @@ def test_api_predict_preserves_uploaded_case_signal() -> None:
     assert response.status_code == 200
     assert payload["predicted_class"] == "suspected_opacity"
     assert payload["warning"] == WARNING_TEXT
+    assert "visual_evidence" in payload
+    assert (tmp_path / "api.sqlite").exists()
     shutil.rmtree(ROOT / "tmp_uploads", ignore_errors=True)
 
 
@@ -159,4 +188,6 @@ def test_evaluation_command_runs_and_preserves_warning_contract(tmp_path: Path) 
     assert all(row["json_valid_rate"] == 1.0 for row in summary)
     assert all(row["warning_rate"] == 1.0 for row in summary)
     assert (out_dir / "before_after_summary.csv").exists()
+    assert (out_dir / "baseline_confusion_matrix.csv").exists()
+    assert (out_dir / "improved_per_class_metrics.csv").exists()
     assert db_path.exists()
