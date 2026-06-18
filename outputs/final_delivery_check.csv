@@ -1,0 +1,16 @@
+path,exists,status
+src/pipeline.py,False,MISSING
+src/inference.py,True,OK
+src/guardrails.py,True,OK
+src/database.py,True,OK
+src/metrics.py,True,OK
+api/main.py,True,OK
+app/streamlit_app.py,True,OK
+eval/run_evaluation.py,True,OK
+outputs/metrics_summary.csv,True,OK
+outputs/evaluation_predictions.csv,True,OK
+outputs/confusion_matrix.csv,True,OK
+eval/error_analysis.csv,True,OK
+prompts/prompt_baseline.txt,True,OK
+prompts/prompt_improved.txt,True,OK
+prompts/prompt_uncertainty_strict.txt,True,OK

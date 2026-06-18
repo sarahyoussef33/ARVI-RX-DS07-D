@@ -1,0 +1,12 @@
+Strict uncertainty safety rule for the educational prototype.
+
+Apply this rule after a draft prediction is produced:
+- If confidence < 0.60, set predicted_class to "uncertain".
+- If image_quality is "limited" or "poor", set predicted_class to "uncertain".
+- If visual_evidence is empty, vague, contradictory, or not directly visible, set predicted_class to "uncertain".
+- If the justification uses unsupported diagnostic language, set predicted_class to "uncertain".
+- When uncertainty is forced, add a limitation explaining the reason, for example:
+  "uncertainty forced because confidence was below 0.60 or image quality/evidence was insufficient".
+
+The warning must remain exactly:
+Prototype pédagogique. Non destiné au diagnostic. Validation par un professionnel qualifié requise.

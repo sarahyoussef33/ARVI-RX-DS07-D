@@ -1,20 +1,37 @@
 # README notebooks - ARVI-RX
 
-Ces notebooks guident la production du livrable final sans remplacer le code existant.
+Ces notebooks guident la couche pédagogique du projet avant la création du pipeline final.
+Ils ne remplacent pas le code dans `src/` et ne prouvent pas une validité médicale.
 
-| Notebook | Responsable recommandé | Rôle | Sorties attendues | À transférer ensuite |
+## Décisions officielles
+
+- Clé JSON officielle : `visual_evidence`.
+- Warning officiel : `Prototype pédagogique. Non destiné au diagnostic. Validation par un professionnel qualifié requise.`
+- Dataset source officiel : `image_path` et `label`.
+- Les outputs peuvent utiliser `filename` et `expected_label` pour la lisibilité.
+- Streamlit est la démo officielle; Gradio reste optionnel.
+- `improved` signifie prudence renforcée, pas modèle médical supérieur.
+- Accuracy `1.0` = validation technique du pipeline jouet, pas performance clinique.
+
+## Rôle des notebooks
+
+| Notebook | Responsable | Ce qu'il prouve | Ce qu'il ne prouve pas | Sorties |
 |---|---|---|---|---|
-| `00_setup_and_paths.ipynb` | Sarah | Vérifier chemins, dépendances, dossiers et DB temporaire. | `outputs/setup_check.txt` | Chemins robustes et `db_path` configurable. |
-| `01_dataset_and_preprocessing.ipynb` | Julia | Vérifier dataset, images, labels et preprocessing. | `outputs/dataset_summary.csv` | Fonctions de preprocessing si retenues. |
-| `02_baseline_inference.ipynb` | Hugo | Tester `toy_predict`. | `outputs/baseline_predictions.csv` | Baseline déterministe et contrat clarifié. |
-| `03_prompts_and_improved_mode.ipynb` | Julie | Harmoniser prompts et incertitude. | `outputs/improved_predictions.csv`, prompts cibles | Règle d'incertitude. |
-| `04_guardrails_and_json_contract.ipynb` | Julie | Tester JSON, warning, classes et cas négatifs. | `outputs/json_contract_check.csv` | Décision `visual_evidence` vs `visual_observations`. |
-| `05_pipeline_and_sqlite_logs.ipynb` | Sarah | Préparer `run_pipeline` avec logs SQLite. | `outputs/pipeline_logs_preview.csv` | Futur `src/pipeline.py`. |
-| `06_evaluation_and_metrics.ipynb` | Emma | Calculer métriques du livrable. | `outputs/evaluation_predictions.csv`, `outputs/metrics_summary.csv`, `outputs/confusion_matrix.csv`, `outputs/per_class_metrics.csv`, `outputs/specificity_metrics.csv` | Fonctions à ajouter dans `src/metrics.py`. |
-| `07_error_analysis_register.ipynb` | Emma | Créer registre commenté de 20 à 30 cas. | `eval/error_analysis.csv` | Registre d'erreurs pour rapport. |
-| `08_api_and_web_integration.ipynb` | Sarah + Hugo | Préparer API/Streamlit via pipeline. | Sections de code cible | Modifier API/Streamlit après `src/pipeline.py`. |
-| `09_final_smoke_test_and_export.ipynb` | Sarah | Checklist finale et commandes. | `outputs/final_delivery_check.csv` | Smoke test final. |
+| `00_setup_and_paths.ipynb` | Sarah | Environnement, chemins, dépendances, DB temporaire | Que l'app finale est intégrée | `outputs/setup_check.txt` |
+| `01_dataset_and_preprocessing.ipynb` | Julia | CSV lisible, images présentes, limites dataset connues | Validité clinique des images | `outputs/dataset_summary.csv` |
+| `02_baseline_inference.ipynb` | Hugo | Baseline reproductible et contrat JSON testable | Capacité radiologique; le score est biaisé par label leakage | `outputs/baseline_predictions.csv` |
+| `03_prompts_and_improved_mode.ipynb` | Julie | Stratégie de prudence documentée | Effet réel d'un VLM, non utilisé ici | `outputs/improved_predictions.csv` |
+| `04_guardrails_and_json_contract.ipynb` | Julie | JSON, warning, classes et garde-fous | Sécurité clinique complète | `outputs/json_contract_check.csv` |
+| `05_pipeline_and_sqlite_logs.ipynb` | Sarah | Design préparatoire du futur pipeline | Pipeline final déjà codé | `outputs/pipeline_logs_preview.csv` |
+| `06_evaluation_and_metrics.ipynb` | Emma | Métriques techniques et exports lisibles | Performance médicale | `outputs/metrics_summary.csv`, matrices et métriques par classe |
+| `07_error_analysis_register.ipynb` | Emma | Analyse critique de 20 à 30 cas synthétiques | Analyse d'erreurs clinique | `eval/error_analysis.csv` |
+| `08_api_and_web_integration.ipynb` | Sarah + Hugo | Plan d'intégration API/Streamlit | API déjà branchée au pipeline | Code cible documenté |
+| `09_final_smoke_test_and_export.ipynb` | Sarah | Checklist de livraison | Qualité scientifique complète | `outputs/final_delivery_check.csv` |
 
-Ordre recommandé : 00, 01, 02, 03, 04, 05, 06, 07, 08, 09.
+## Validation technique vs validation médicale
 
-Rappels : prototype pédagogique non clinique, warning obligatoire, classe `uncertain` conservée.
+Les notebooks valident surtout le comportement logiciel: fichiers présents, JSON valide,
+warning obligatoire, garde-fous, exports CSV, métriques et registre d'analyse.
+Ils ne valident pas un dispositif médical. La baseline lit indirectement les labels via
+les noms de fichiers; tout score parfait doit être expliqué comme un résultat attendu du
+jeu synthétique.

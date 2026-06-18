@@ -1,0 +1,28 @@
+generated_at=2026-06-18T12:12:23
+PROJECT_ROOT=c:\Users\Sarah Efrei\OneDrive\Desktop\2025-2026\S6\MasterCamp\Code du prof\ARVI-RX
+DB_PATH=C:\Users\SARAHE~1\AppData\Local\Temp\assistant_radio_notebooks.sqlite
+
+Files:
+- README.md: OK
+- src/inference.py: OK
+- src/guardrails.py: OK
+- src/preprocessing.py: OK
+- src/database.py: OK
+- src/metrics.py: OK
+- api/main.py: OK
+- app/streamlit_app.py: OK
+- app/gradio_app.py: OK
+- eval/run_evaluation.py: OK
+- tests/test_repository_smoke.py: OK
+- data/synthetic_cases.csv: OK
+- data/sample_images: OK
+- prompts: OK
+- sql/schema.sql: OK
+
+Dependencies:
+- pandas: OK
+- PIL: OK
+- matplotlib: OK
+- fastapi: MISSING
+- streamlit: MISSING
+- pytest: MISSING
