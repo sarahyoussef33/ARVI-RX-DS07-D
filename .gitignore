@@ -17,3 +17,4 @@ assets/
 
 # Local duplicate; the shareable PDF lives in docs/appel_offre.pdf
 /appel_offre.pdf
+/codex-prompt-notebooks.md
