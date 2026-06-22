@@ -1,3 +1,3 @@
 mode,n,accuracy,macro_f1,json_valid_rate,warning_rate,uncertain_rate,latency_median_ms,interpretation
-baseline,30,1.0,1.0,1.0,1.0,0.3333,2.0,technical validation only; not medical performance
-improved,30,1.0,1.0,1.0,1.0,0.3333,2.0,technical validation only; not medical performance
+baseline,30,1.0,1.0,1.0,1.0,0.3333,7.0,technical validation only; not medical performance
+improved,30,1.0,1.0,1.0,1.0,0.3333,5.5,technical validation only; not medical performance

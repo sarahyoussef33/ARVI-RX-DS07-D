@@ -5,6 +5,6 @@
   "json_valid_rate": 1.0,
   "warning_rate": 1.0,
   "uncertain_rate": 0.3333,
-  "latency_median_ms": 2.0,
+  "latency_median_ms": 7.0,
   "interpretation": "technical validation only; not medical performance"
 }
