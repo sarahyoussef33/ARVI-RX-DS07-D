@@ -37,6 +37,9 @@ python eval/run_evaluation.py --mode toy
 streamlit run app/streamlit_app.py
 ```
 
+Pour la chaÃ®ne donnees reelles + MedGemma, voir `docs/real_data_medgemma.md`.
+Le mode `mock_medgemma` permet de tester le flux sans acces Hugging Face/GPU.
+
 ## Smoke test du dépôt
 
 Avant une soutenance, un push ou une livraison, lancer le contrôle court :
@@ -56,6 +59,7 @@ Commandes finales recommandées pour le livrable :
 python -m pytest -q
 python -m compileall -q src api app eval finetuning tests
 python eval/run_evaluation.py --mode toy --out-dir outputs --db-path outputs/assistant_radio.sqlite
+python eval/run_evaluation.py --mode mock_medgemma --out-dir outputs --db-path outputs/assistant_radio.sqlite
 uvicorn api.main:app --reload
 streamlit run app/streamlit_app.py
 ```

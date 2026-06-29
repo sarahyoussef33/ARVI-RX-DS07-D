@@ -1,5 +1,0 @@
-test_case,valid_before,errors_before,predicted_after,warning_after,valid_after,errors_after
-positive_valid,True,,suspected_opacity,True,True,
-negative_missing_warning,False,warning missing,uncertain,True,True,
-negative_bad_class,False,invalid predicted_class,uncertain,True,True,
-negative_bad_confidence,False,"confidence outside [0,1]",uncertain,True,True,

@@ -1,4 +1,0 @@
-class,tp,fp,fn,precision,recall_sensitivity,f1,note
-normal,10,0,0,1.0,1.0,1.0,synthetic deterministic baseline
-suspected_opacity,10,0,0,1.0,1.0,1.0,synthetic deterministic baseline
-uncertain,10,0,0,1.0,1.0,1.0,synthetic deterministic baseline

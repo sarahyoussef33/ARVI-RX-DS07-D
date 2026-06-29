@@ -1,0 +1,3 @@
+image_path,label,source
+data/real_images/NORMAL/example.png,normal,example_source
+data/real_images/PNEUMONIA/example.png,suspected_opacity,example_source

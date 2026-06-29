@@ -28,8 +28,90 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         w.writeheader(); w.writerows(rows)
 
 
-def run(mode: str, db_path: Path) -> tuple[list[dict], dict]:
-    cases = read_cases(ROOT / 'data' / 'synthetic_cases.csv')
+def resolve_cases(mode: str, metadata_path: Path | None = None, use_synthetic: bool = False) -> list[dict]:
+    if use_synthetic:
+        return read_cases(ROOT / 'data' / 'synthetic_cases.csv')
+
+    candidates = []
+    if metadata_path:
+        candidates.append(metadata_path)
+    candidates.extend([ROOT / 'data' / 'splits' / 'test.csv', ROOT / 'data' / 'metadata.csv'])
+
+    for path in candidates:
+        if path.exists():
+            rows = read_cases(path)
+            if rows:
+                return rows
+
+    if mode in {'baseline', 'improved', 'mock_medgemma'}:
+        return read_cases(ROOT / 'data' / 'synthetic_cases.csv')
+
+    raise SystemExit(
+        'No real dataset rows found. Run data/prepare_real_dataset.py first, '
+        'or use --mode mock_medgemma for an offline pipeline check.'
+    )
+
+
+def build_error_analysis(rows: list[dict]) -> list[dict]:
+    error_rows = []
+    for row in rows:
+        is_correct = row['label'] == row['predicted_class']
+        if is_correct and row['predicted_class'] != 'uncertain':
+            continue
+        if row['predicted_class'] == 'uncertain' and row['label'] != 'uncertain':
+            error_type = 'overcautious_uncertain'
+        elif row['label'] == 'uncertain' and row['predicted_class'] != 'uncertain':
+            error_type = 'missed_uncertainty'
+        elif not is_correct:
+            error_type = 'wrong_class'
+        else:
+            error_type = 'review_uncertain'
+        error_rows.append({
+            'case_id': row.get('case_id', Path(row['filename']).stem),
+            'filename': row['filename'],
+            'expected_label': row['label'],
+            'predicted_class': row['predicted_class'],
+            'confidence': row['confidence'],
+            'error_type': error_type,
+            'error_detail': row.get('error_detail', ''),
+            'justification': row.get('justification', ''),
+            'review_comment': 'technical error analysis only; not clinical review',
+        })
+    return error_rows
+
+
+def write_confusion_png(path: Path, matrix_rows: list[dict]) -> None:
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    labels = [row['expected_label'] for row in matrix_rows]
+    values = [[row[label] for label in labels] for row in matrix_rows]
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.imshow(values, cmap='Blues')
+    ax.set_xticks(range(len(labels)), labels=labels, rotation=30, ha='right')
+    ax.set_yticks(range(len(labels)), labels=labels)
+    ax.set_xlabel('Predicted')
+    ax.set_ylabel('Expected')
+    for i, row in enumerate(values):
+        for j, value in enumerate(row):
+            ax.text(j, i, str(value), ha='center', va='center')
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def run(
+    mode: str,
+    db_path: Path,
+    metadata_path: Path | None = None,
+    limit: int | None = None,
+    use_synthetic: bool = False,
+) -> tuple[list[dict], dict]:
+    cases = resolve_cases(mode, metadata_path, use_synthetic=use_synthetic)
+    if limit is not None:
+        cases = cases[:limit]
     rows = []
     init_db(db_path)
     for case in cases:
@@ -37,7 +119,8 @@ def run(mode: str, db_path: Path) -> tuple[list[dict], dict]:
         pred = run_pipeline(image_path, mode=mode, db_path=db_path)
         valid, errors = validate_prediction(pred)
         row = {
-            'case_id': case['case_id'],
+            'case_id': case.get('case_id') or Path(case['image_path']).stem,
+            'source': case.get('source', ''),
             'label': case['label'],
             'expected_label': case['label'],
             'filename': image_path.name,
@@ -47,6 +130,8 @@ def run(mode: str, db_path: Path) -> tuple[list[dict], dict]:
             'warning': pred.get('warning', ''),
             'latency_ms': pred.get('latency_ms', 0),
             'guardrail_errors': ';'.join(errors),
+            'error_detail': pred.get('error_detail', ''),
+            'justification': pred.get('justification', ''),
             'interpretation_note': 'technical validation only; not medical performance',
         }
         rows.append(row)
@@ -56,23 +141,39 @@ def run(mode: str, db_path: Path) -> tuple[list[dict], dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', choices=['toy', 'baseline', 'improved'], default='toy')
+    parser.add_argument('--mode', choices=['toy', 'baseline', 'improved', 'medgemma', 'mock_medgemma'], default='toy')
     parser.add_argument('--out-dir', type=Path, default=ROOT / 'eval' / 'outputs')
     parser.add_argument('--db-path', type=Path, default=ROOT / 'medical_ai_evidence.sqlite')
+    parser.add_argument('--metadata-path', type=Path, default=None)
+    parser.add_argument('--limit', type=int, default=None, help='Evaluate only the first N cases.')
     args = parser.parse_args()
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     modes = ['baseline', 'improved'] if args.mode == 'toy' else [args.mode]
     summary = []
     for mode in modes:
-        rows, metrics = run(mode, args.db_path)
+        rows, metrics = run(
+            mode,
+            args.db_path,
+            metadata_path=args.metadata_path,
+            limit=args.limit,
+            use_synthetic=args.mode == 'toy',
+        )
         write_csv(out_dir / f'{mode}_predictions.csv', rows)
         y_true = [row['label'] for row in rows]
         y_pred = [row['predicted_class'] for row in rows]
-        write_csv(out_dir / f'{mode}_confusion_matrix.csv', confusion_matrix(y_true, y_pred))
+        matrix = confusion_matrix(y_true, y_pred)
+        write_csv(out_dir / f'{mode}_confusion_matrix.csv', matrix)
         write_csv(out_dir / f'{mode}_per_class_metrics.csv', per_class_metrics(y_true, y_pred))
         write_csv(out_dir / f'{mode}_specificity_metrics.csv', specificity_metrics(y_true, y_pred))
         (out_dir / f'{mode}_metrics.json').write_text(json.dumps(metrics, indent=2), encoding='utf-8')
+        write_csv(out_dir / f'{mode}_error_analysis.csv', build_error_analysis(rows))
+        write_confusion_png(out_dir / f'{mode}_confusion_matrix.png', matrix)
+        if mode in {'medgemma', 'mock_medgemma'}:
+            write_csv(out_dir / 'predictions.csv', rows)
+            (out_dir / 'metrics.json').write_text(json.dumps(metrics, indent=2), encoding='utf-8')
+            write_csv(out_dir / 'error_analysis.csv', build_error_analysis(rows))
+            write_confusion_png(out_dir / 'confusion_matrix.png', matrix)
         summary.append({'mode': mode, **metrics})
     write_csv(out_dir / 'before_after_summary.csv', summary)
     print(json.dumps(summary, indent=2))

@@ -8,6 +8,7 @@ from typing import Any
 from .database import insert_run
 from .guardrails import WARNING_TEXT, apply_safety_guardrails, validate_prediction
 from .inference import toy_predict
+from .models.medgemma_predictor import medgemma_predict, medgemma_predict_with_resources, mock_medgemma_predict
 from .preprocessing import load_image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +41,12 @@ def _apply_improved_uncertainty_rule(prediction: dict[str, Any]) -> dict[str, An
     return prediction
 
 
-def run_pipeline(image_path: str | Path, mode: str = "toy", db_path: str | Path | None = None) -> dict[str, Any]:
+def run_pipeline(
+    image_path: str | Path,
+    mode: str = "toy",
+    db_path: str | Path | None = None,
+    medgemma_resources: tuple[Any, Any, Any] | None = None,
+) -> dict[str, Any]:
     """Run the educational prediction pipeline and persist one SQLite log.
 
     This is a non-clinical software pipeline: preprocessing, toy inference,
@@ -54,10 +60,19 @@ def run_pipeline(image_path: str | Path, mode: str = "toy", db_path: str | Path 
     load_image(image_path)
 
     inference_mode = "baseline" if mode == "toy" else mode
-    if inference_mode not in {"baseline", "improved"}:
+    if inference_mode not in {"baseline", "improved", "medgemma", "mock_medgemma"}:
         inference_mode = "baseline"
 
-    prediction = toy_predict(image_path, mode=inference_mode)
+    if inference_mode == "medgemma":
+        if medgemma_resources is None:
+            prediction = medgemma_predict(image_path)
+        else:
+            prediction = medgemma_predict_with_resources(image_path, *medgemma_resources)
+    elif inference_mode == "mock_medgemma":
+        prediction = mock_medgemma_predict(image_path)
+    else:
+        prediction = toy_predict(image_path, mode=inference_mode)
+
     if inference_mode == "improved":
         prediction = _apply_improved_uncertainty_rule(prediction)
 

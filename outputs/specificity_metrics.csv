@@ -1,4 +1,0 @@
-class,tn,fp,specificity,note
-normal,20,0,1.0,technical metric on toy dataset
-suspected_opacity,20,0,1.0,technical metric on toy dataset
-uncertain,20,0,1.0,technical metric on toy dataset

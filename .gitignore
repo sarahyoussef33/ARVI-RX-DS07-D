@@ -6,6 +6,16 @@ __pycache__/
 tmp_uploads/
 medical_ai_evidence.sqlite
 eval/outputs/
+*.sqlite
+*.sqlite-*
+outputs/
+outputs_*/
+data/kaggle_raw/
+data/real_images/*
+!data/real_images/.gitkeep
+data/metadata.csv
+data/splits/*.csv
+!data/splits/.gitkeep
 .env
 .DS_Store
 

@@ -17,6 +17,7 @@ from api.main import health
 from src.guardrails import WARNING_TEXT, apply_safety_guardrails, validate_prediction
 from src.inference import toy_predict
 from src.metrics import summarize_metrics
+from src.models.medgemma_predictor import parse_medgemma_response
 from src.pipeline import run_pipeline
 
 
@@ -34,11 +35,15 @@ def test_repository_student_contract_is_present() -> None:
         "docs/ethique_et_limites.md",
         "docs/evaluation_protocol.md",
         "data/synthetic_cases.csv",
+        "data/metadata.example.csv",
+        "data/prepare_real_dataset.py",
         "src/inference.py",
         "src/guardrails.py",
+        "src/models/medgemma_predictor.py",
         "src/pipeline.py",
         "api/main.py",
         "eval/run_evaluation.py",
+        "docs/real_data_medgemma.md",
         "prompts/json_schema.md",
     ]
     forbidden_paths = [
@@ -105,6 +110,19 @@ def test_run_pipeline_returns_valid_json_and_logs_sqlite(tmp_path: Path) -> None
     assert count == 1
 
 
+def test_mock_medgemma_pipeline_returns_valid_json_and_logs_sqlite(tmp_path: Path) -> None:
+    image_path = ROOT / "data" / "sample_images" / "CXR_SYN_002_suspected_opacity.png"
+    db_path = tmp_path / "mock_medgemma.sqlite"
+    pred = run_pipeline(image_path, mode="mock_medgemma", db_path=db_path)
+    valid, errors = validate_prediction(pred)
+
+    assert valid, errors
+    assert pred["predicted_class"] in {"normal", "suspected_opacity", "uncertain"}
+    assert pred["warning"] == WARNING_TEXT
+    assert pred["model_name"] == "mock-medgemma-4b-it"
+    assert db_path.exists()
+
+
 def test_python_source_tree_compiles(tmp_path: Path) -> None:
     old_prefix = sys.pycache_prefix
     sys.pycache_prefix = str(tmp_path / "pycache")
@@ -122,6 +140,61 @@ def test_invalid_model_output_falls_back_to_uncertain() -> None:
     assert pred["confidence"] <= 0.5
     assert pred["warning"] == WARNING_TEXT
     assert pred["guardrail_errors"]
+
+
+def test_medgemma_parser_falls_back_on_malformed_response() -> None:
+    pred = parse_medgemma_response("not valid json")
+
+    assert pred["predicted_class"] == "uncertain"
+    assert pred["warning"] == WARNING_TEXT
+    assert "Invalid MedGemma JSON response" in pred["justification"]
+
+
+def test_prepare_real_dataset_script_creates_metadata_and_splits(tmp_path: Path) -> None:
+    images_dir = tmp_path / "real_images"
+    normal_dir = images_dir / "NORMAL"
+    pneumonia_dir = images_dir / "PNEUMONIA"
+    normal_dir.mkdir(parents=True)
+    pneumonia_dir.mkdir(parents=True)
+    shutil.copy(
+        ROOT / "data" / "sample_images" / "CXR_SYN_001_normal.png",
+        normal_dir / "case_normal.png",
+    )
+    shutil.copy(
+        ROOT / "data" / "sample_images" / "CXR_SYN_002_suspected_opacity.png",
+        pneumonia_dir / "case_pneumonia.png",
+    )
+
+    metadata_out = tmp_path / "metadata.csv"
+    splits_dir = tmp_path / "splits"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "data/prepare_real_dataset.py",
+            "--images-dir",
+            str(images_dir),
+            "--metadata-out",
+            str(metadata_out),
+            "--splits-dir",
+            str(splits_dir),
+            "--source",
+            "unit_test",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    with metadata_out.open("r", encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+    assert {row["label"] for row in rows} == {"normal", "suspected_opacity"}
+    assert all(row["source"] == "unit_test" for row in rows)
+    assert (splits_dir / "train.csv").exists()
+    assert (splits_dir / "val.csv").exists()
+    assert (splits_dir / "test.csv").exists()
 
 
 def test_metrics_and_api_health_contract() -> None:

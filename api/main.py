@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 
 from src.pipeline import run_pipeline
 
@@ -17,7 +17,7 @@ def health() -> dict:
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)) -> dict:
+async def predict(file: UploadFile = File(...), mode: str = Form("improved")) -> dict:
     UPLOAD_DIR.mkdir(exist_ok=True)
     filename = Path(file.filename or "image.png").name
     suffix = Path(filename).suffix or ".png"
@@ -26,4 +26,6 @@ async def predict(file: UploadFile = File(...)) -> dict:
     target = UPLOAD_DIR / f"uploaded_{safe_stem}{suffix}"
     with target.open("wb") as f:
         shutil.copyfileobj(file.file, f)
-    return run_pipeline(target, mode="improved")
+    if mode not in {"toy", "baseline", "improved", "medgemma", "mock_medgemma"}:
+        mode = "improved"
+    return run_pipeline(target, mode=mode)
