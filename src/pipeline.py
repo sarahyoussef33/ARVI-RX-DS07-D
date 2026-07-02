@@ -9,6 +9,7 @@ from .database import insert_run
 from .guardrails import WARNING_TEXT, apply_safety_guardrails, validate_prediction
 from .inference import toy_predict
 from .models.medgemma_predictor import medgemma_predict, medgemma_predict_with_resources, mock_medgemma_predict
+from .models.remote_medgemma_client import remote_medgemma_predict
 from .preprocessing import load_image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +47,7 @@ def run_pipeline(
     mode: str = "toy",
     db_path: str | Path | None = None,
     medgemma_resources: tuple[Any, Any, Any] | None = None,
+    remote_url: str | None = None,
 ) -> dict[str, Any]:
     """Run the educational prediction pipeline and persist one SQLite log.
 
@@ -60,7 +62,7 @@ def run_pipeline(
     load_image(image_path)
 
     inference_mode = "baseline" if mode == "toy" else mode
-    if inference_mode not in {"baseline", "improved", "medgemma", "mock_medgemma"}:
+    if inference_mode not in {"baseline", "improved", "medgemma", "mock_medgemma", "remote_medgemma"}:
         inference_mode = "baseline"
 
     if inference_mode == "medgemma":
@@ -70,6 +72,8 @@ def run_pipeline(
             prediction = medgemma_predict_with_resources(image_path, *medgemma_resources)
     elif inference_mode == "mock_medgemma":
         prediction = mock_medgemma_predict(image_path)
+    elif inference_mode == "remote_medgemma":
+        prediction = remote_medgemma_predict(image_path, remote_url=remote_url)
     else:
         prediction = toy_predict(image_path, mode=inference_mode)
 

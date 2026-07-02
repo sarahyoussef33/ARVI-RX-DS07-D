@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
+import sys
 import time
+import traceback
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -13,15 +17,24 @@ from src.guardrails import ALLOWED_CLASSES, WARNING_TEXT, apply_safety_guardrail
 from src.preprocessing import basic_quality_flag
 
 
+logger = logging.getLogger(__name__)
+
 MODEL_ID = "google/medgemma-4b-it"
 PROMPT_VERSION = "medgemma_strict_json_v1"
 MEDGEMMA_PROMPT = (
-    "Tu es un assistant radiologue virtuel pedagogique. Analyse cette radiographie "
-    "thoracique frontale. Reponds uniquement en JSON valide avec les champs : "
-    "class, confidence, observations, justification, limits, warning. Les seules "
-    "classes autorisees sont normal, suspected_opacity, uncertain. Si l'image est "
-    "ambigue, de mauvaise qualite ou si tu n'es pas sur, reponds uncertain. "
-    "Ne donne pas de diagnostic medical definitif."
+    "Tu es un assistant radiologue virtuel pedagogique pour le projet ARVI-RX. "
+    "Analyse prudemment cette radiographie thoracique frontale. Le modele est un "
+    "prototype non valide cliniquement et ne doit pas produire d'avis medical. "
+    "Reponds uniquement avec un JSON valide, sans texte avant ni apres. "
+    "Schema obligatoire: {"
+    '"class": "normal | pneumonia_suspected | uncertain", '
+    '"confidence": 0.0, '
+    '"observations": ["observation courte et prudente"], '
+    '"justification": "justification courte et prudente", '
+    '"limits": "limites de l analyse", '
+    '"warning": "message rappelant que ce n est pas un avis medical"'
+    "}. Si l'image est ambigue, de mauvaise qualite ou si tu n'es pas sur, "
+    "utilise uncertain."
 )
 
 
@@ -45,6 +58,10 @@ def _fallback_prediction(image_path: str | Path, reason: str, latency_ms: int = 
             "error_detail": reason,
         }
     )
+
+
+def _format_exception(context: str, exc: BaseException) -> str:
+    return f"{context}: {exc}\n{traceback.format_exc()}"
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -74,6 +91,8 @@ def parse_medgemma_response(text: str, image_path: str | Path = "") -> dict[str,
         return _fallback_prediction(image_path, f"Invalid MedGemma JSON response: {exc}")
 
     predicted_class = str(payload.get("class") or payload.get("predicted_class") or "uncertain")
+    if predicted_class == "pneumonia_suspected":
+        predicted_class = "suspected_opacity"
     if predicted_class not in ALLOWED_CLASSES:
         predicted_class = "uncertain"
 
@@ -145,12 +164,82 @@ def mock_medgemma_predict(image_path: str | Path) -> dict[str, Any]:
     return prediction
 
 
-def _model_load_kwargs(torch_module: Any) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {"device_map": "auto"}
+def _runtime_device(torch_module: Any) -> tuple[str, Any]:
+    cuda_available = bool(torch_module.cuda.is_available())
+    if not cuda_available:
+        return "cpu", torch_module.float32
+    if hasattr(torch_module.cuda, "is_bf16_supported") and torch_module.cuda.is_bf16_supported():
+        return "cuda", torch_module.bfloat16
+    return "cuda", torch_module.float16
+
+
+def _available_memory_gb() -> float | None:
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatus()
+            status.dwLength = ctypes.sizeof(MemoryStatus)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            return status.ullAvailPhys / (1024**3)
+        except Exception:
+            return None
+    try:
+        pages = os.sysconf("SC_AVPHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        return (pages * page_size) / (1024**3)
+    except Exception:
+        return None
+
+
+def _check_cpu_memory_for_float32(torch_module: Any) -> None:
     if torch_module.cuda.is_available():
-        kwargs["torch_dtype"] = torch_module.bfloat16
+        return
+    available_gb = _available_memory_gb()
+    required_gb = 24.0
+    logger.info("MedGemma CPU memory preflight: available_gb=%s required_gb=%s", available_gb, required_gb)
+    if available_gb is not None and available_gb < required_gb:
+        raise RuntimeError(
+            "MedGemma 4B CPU float32 loading requires roughly 24 GB of free RAM. "
+            f"Only {available_gb:.1f} GB appears available. Install/use a CUDA build of torch "
+            "with a suitable GPU, or run on a machine with more RAM."
+        )
+
+
+def _model_load_kwargs(torch_module: Any, local_files_only: bool) -> dict[str, Any]:
+    device, dtype = _runtime_device(torch_module)
+    # Do not use device_map="auto": on this project it can leave parameters on meta tensors.
+    kwargs: dict[str, Any] = {
+        "dtype": dtype,
+        "local_files_only": local_files_only,
+        "low_cpu_mem_usage": True,
+    }
+    if device == "cuda":
+        kwargs["device_map"] = {"": "cuda:0"}
     else:
-        kwargs["torch_dtype"] = torch_module.float32
+        kwargs["device_map"] = {"": "cpu"}
+    logger.info(
+        "MedGemma load config: model_id=%s cuda_available=%s device=%s dtype=%s local_files_only=%s device_map=%s",
+        MODEL_ID,
+        torch_module.cuda.is_available(),
+        device,
+        dtype,
+        local_files_only,
+        kwargs["device_map"],
+    )
     return kwargs
 
 
@@ -160,17 +249,52 @@ def _load_model_class() -> Any:
     return AutoModelForImageTextToText
 
 
-@lru_cache(maxsize=1)
-def load_medgemma_resources(model_id: str = MODEL_ID) -> tuple[Any, Any, Any]:
-    """Load and cache the real MedGemma processor/model resources."""
+def _has_meta_tensors(model: Any) -> bool:
+    for tensor in list(model.parameters()) + list(model.buffers()):
+        if bool(getattr(tensor, "is_meta", False)):
+            return True
+    return False
+
+
+def _load_medgemma_once(model_id: str, local_files_only: bool) -> tuple[Any, Any, Any]:
     import torch
     from transformers import AutoProcessor
 
+    device, _ = _runtime_device(torch)
     model_class = _load_model_class()
-    processor = AutoProcessor.from_pretrained(model_id)
-    model = model_class.from_pretrained(model_id, **_model_load_kwargs(torch))
+    _check_cpu_memory_for_float32(torch)
+    logger.info(
+        "Loading MedGemma resources: model_id=%s cuda_available=%s target_device=%s local_files_only=%s",
+        model_id,
+        torch.cuda.is_available(),
+        device,
+        local_files_only,
+    )
+    processor = AutoProcessor.from_pretrained(model_id, local_files_only=local_files_only)
+    model = model_class.from_pretrained(model_id, **_model_load_kwargs(torch, local_files_only))
+    if _has_meta_tensors(model):
+        raise RuntimeError(
+            "MedGemma loaded with meta tensors. Refusing to run inference; "
+            "use explicit CPU/CUDA loading instead of device_map='auto'."
+        )
     model.eval()
+    model._arvi_rx_device = device
+    logger.info("MedGemma loaded successfully on device=%s", device)
     return processor, model, torch
+
+
+@lru_cache(maxsize=1)
+def load_medgemma_resources(model_id: str = MODEL_ID) -> tuple[Any, Any, Any]:
+    """Load and cache the real MedGemma processor/model resources."""
+    try:
+        return _load_medgemma_once(model_id, local_files_only=True)
+    except Exception as local_exc:
+        logger.warning("MedGemma local cache load failed: %s", local_exc, exc_info=True)
+        try:
+            return _load_medgemma_once(model_id, local_files_only=False)
+        except Exception:
+            logger.exception("MedGemma remote/cache load failed")
+            raise
 
 
 def _tensor_device(model: Any) -> Any:
@@ -197,6 +321,13 @@ def generate_medgemma_text(
 ) -> str:
     """Generate text from the real image + strict text prompt."""
     image = Image.open(image_path).convert("RGB")
+    logger.info(
+        "Running MedGemma multimodal generation: image=%s size=%s mode=%s device=%s",
+        image_path,
+        image.size,
+        image.mode,
+        getattr(model, "_arvi_rx_device", _tensor_device(model)),
+    )
     messages = [
         {
             "role": "user",
@@ -233,7 +364,7 @@ def medgemma_predict_with_resources(
     except Exception as exc:
         return _fallback_prediction(
             image_path,
-            f"MedGemma inference could not run locally: {exc}",
+            _format_exception("MedGemma inference could not run locally", exc),
             latency_ms=int((time.perf_counter() - start) * 1000),
         )
 
@@ -252,7 +383,7 @@ def medgemma_predict(image_path: str | Path, model_id: str = MODEL_ID) -> dict[s
     except Exception as exc:
         return _fallback_prediction(
             image_path,
-            f"MedGemma model could not be loaded: {exc}",
+            _format_exception("MedGemma model could not be loaded", exc),
             latency_ms=int((time.perf_counter() - start) * 1000),
         )
     prediction = medgemma_predict_with_resources(image_path, processor, model, torch_module, model_id=model_id)

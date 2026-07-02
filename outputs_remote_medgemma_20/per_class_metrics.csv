@@ -1,0 +1,4 @@
+class,tp,fp,fn,precision,recall_sensitivity,f1
+normal,9,0,4,1.0,0.6923,0.8182
+suspected_opacity,7,4,0,0.6364,1.0,0.7778
+uncertain,0,0,0,0.0,0.0,0.0

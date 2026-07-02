@@ -1,0 +1,2 @@
+mode,n,accuracy,macro_f1,json_valid_rate,warning_rate,uncertain_rate,latency_median_ms,interpretation
+remote_medgemma,20,0.8,0.532,1.0,1.0,0.0,21976.0,technical validation only; not medical performance

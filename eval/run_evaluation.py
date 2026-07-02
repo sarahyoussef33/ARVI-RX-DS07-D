@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+from collections import Counter, defaultdict
 from pathlib import Path
 import sys
 
@@ -13,6 +14,9 @@ from src.guardrails import validate_prediction
 from src.metrics import confusion_matrix, per_class_metrics, specificity_metrics, summarize_metrics
 from src.database import init_db
 from src.pipeline import run_pipeline
+
+
+EXPECTED_REAL_CLASSES = ["normal", "suspected_opacity"]
 
 
 def read_cases(path: Path) -> list[dict]:
@@ -43,13 +47,53 @@ def resolve_cases(mode: str, metadata_path: Path | None = None, use_synthetic: b
             if rows:
                 return rows
 
-    if mode in {'baseline', 'improved', 'mock_medgemma'}:
+    if mode in {'baseline', 'improved', 'mock_medgemma', 'remote_medgemma'}:
         return read_cases(ROOT / 'data' / 'synthetic_cases.csv')
 
     raise SystemExit(
         'No real dataset rows found. Run data/prepare_real_dataset.py first, '
         'or use --mode mock_medgemma for an offline pipeline check.'
     )
+
+
+def select_balanced_cases(
+    cases: list[dict],
+    per_class_limit: int,
+    expected_classes: list[str] = EXPECTED_REAL_CLASSES,
+) -> list[dict]:
+    if per_class_limit <= 0:
+        raise SystemExit("--per-class-limit must be a positive integer.")
+
+    counts = Counter(row.get("label", "") for row in cases)
+    missing = [label for label in expected_classes if counts.get(label, 0) == 0]
+    if missing:
+        available = ", ".join(f"{label}={count}" for label, count in sorted(counts.items()))
+        raise SystemExit(
+            "Cannot build a balanced evaluation sample because these classes are missing "
+            f"from the loaded cases: {missing}. Available labels: {available}"
+        )
+
+    selected_by_label: dict[str, list[dict]] = defaultdict(list)
+    for case in cases:
+        label = case.get("label", "")
+        if label in expected_classes and len(selected_by_label[label]) < per_class_limit:
+            selected_by_label[label].append(case)
+        if all(len(selected_by_label[label]) >= per_class_limit for label in expected_classes):
+            break
+
+    insufficient = [
+        f"{label}: requested {per_class_limit}, available {len(selected_by_label[label])}"
+        for label in expected_classes
+        if len(selected_by_label[label]) < per_class_limit
+    ]
+    if insufficient:
+        raise SystemExit("Not enough cases for balanced evaluation: " + "; ".join(insufficient))
+
+    balanced: list[dict] = []
+    for index in range(per_class_limit):
+        for label in expected_classes:
+            balanced.append(selected_by_label[label][index])
+    return balanced
 
 
 def build_error_analysis(rows: list[dict]) -> list[dict]:
@@ -107,16 +151,20 @@ def run(
     db_path: Path,
     metadata_path: Path | None = None,
     limit: int | None = None,
+    per_class_limit: int | None = None,
     use_synthetic: bool = False,
+    remote_url: str | None = None,
 ) -> tuple[list[dict], dict]:
     cases = resolve_cases(mode, metadata_path, use_synthetic=use_synthetic)
-    if limit is not None:
+    if per_class_limit is not None:
+        cases = select_balanced_cases(cases, per_class_limit)
+    elif limit is not None:
         cases = cases[:limit]
     rows = []
     init_db(db_path)
     for case in cases:
         image_path = ROOT / case['image_path']
-        pred = run_pipeline(image_path, mode=mode, db_path=db_path)
+        pred = run_pipeline(image_path, mode=mode, db_path=db_path, remote_url=remote_url)
         valid, errors = validate_prediction(pred)
         row = {
             'case_id': case.get('case_id') or Path(case['image_path']).stem,
@@ -141,11 +189,22 @@ def run(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', choices=['toy', 'baseline', 'improved', 'medgemma', 'mock_medgemma'], default='toy')
+    parser.add_argument(
+        '--mode',
+        choices=['toy', 'baseline', 'improved', 'medgemma', 'mock_medgemma', 'remote_medgemma'],
+        default='toy',
+    )
     parser.add_argument('--out-dir', type=Path, default=ROOT / 'eval' / 'outputs')
     parser.add_argument('--db-path', type=Path, default=ROOT / 'medical_ai_evidence.sqlite')
     parser.add_argument('--metadata-path', type=Path, default=None)
     parser.add_argument('--limit', type=int, default=None, help='Evaluate only the first N cases.')
+    parser.add_argument(
+        '--per-class-limit',
+        type=int,
+        default=None,
+        help='Evaluate N cases per expected class from the loaded split.',
+    )
+    parser.add_argument('--remote-url', default=None, help='Remote Colab/ngrok API URL for remote_medgemma.')
     args = parser.parse_args()
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -157,7 +216,9 @@ def main() -> None:
             args.db_path,
             metadata_path=args.metadata_path,
             limit=args.limit,
+            per_class_limit=args.per_class_limit,
             use_synthetic=args.mode == 'toy',
+            remote_url=args.remote_url,
         )
         write_csv(out_dir / f'{mode}_predictions.csv', rows)
         y_true = [row['label'] for row in rows]
@@ -169,10 +230,12 @@ def main() -> None:
         (out_dir / f'{mode}_metrics.json').write_text(json.dumps(metrics, indent=2), encoding='utf-8')
         write_csv(out_dir / f'{mode}_error_analysis.csv', build_error_analysis(rows))
         write_confusion_png(out_dir / f'{mode}_confusion_matrix.png', matrix)
-        if mode in {'medgemma', 'mock_medgemma'}:
+        if mode in {'medgemma', 'mock_medgemma', 'remote_medgemma'}:
             write_csv(out_dir / 'predictions.csv', rows)
             (out_dir / 'metrics.json').write_text(json.dumps(metrics, indent=2), encoding='utf-8')
             write_csv(out_dir / 'error_analysis.csv', build_error_analysis(rows))
+            write_csv(out_dir / 'confusion_matrix.csv', matrix)
+            write_csv(out_dir / 'per_class_metrics.csv', per_class_metrics(y_true, y_pred))
             write_confusion_png(out_dir / 'confusion_matrix.png', matrix)
         summary.append({'mode': mode, **metrics})
     write_csv(out_dir / 'before_after_summary.csv', summary)

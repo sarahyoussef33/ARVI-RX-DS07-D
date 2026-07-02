@@ -16,8 +16,17 @@ def health() -> dict:
     return {"status": "ok", "scope": "educational prototype, not diagnosis"}
 
 
+@app.get("/health")
+def health_check() -> dict:
+    return health()
+
+
 @app.post("/predict")
-async def predict(file: UploadFile = File(...), mode: str = Form("improved")) -> dict:
+async def predict(
+    file: UploadFile = File(...),
+    mode: str = Form("improved"),
+    remote_url: str = Form(""),
+) -> dict:
     UPLOAD_DIR.mkdir(exist_ok=True)
     filename = Path(file.filename or "image.png").name
     suffix = Path(filename).suffix or ".png"
@@ -26,6 +35,6 @@ async def predict(file: UploadFile = File(...), mode: str = Form("improved")) ->
     target = UPLOAD_DIR / f"uploaded_{safe_stem}{suffix}"
     with target.open("wb") as f:
         shutil.copyfileobj(file.file, f)
-    if mode not in {"toy", "baseline", "improved", "medgemma", "mock_medgemma"}:
+    if mode not in {"toy", "baseline", "improved", "medgemma", "mock_medgemma", "remote_medgemma"}:
         mode = "improved"
-    return run_pipeline(target, mode=mode)
+    return run_pipeline(target, mode=mode, remote_url=remote_url or None)

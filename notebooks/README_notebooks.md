@@ -28,6 +28,11 @@ Ils ne remplacent pas le code dans `src/` et ne prouvent pas une validité médi
 | `08_api_and_web_integration.ipynb` | Sarah + Hugo | Plan d'intégration API/Streamlit | API déjà branchée au pipeline | Code cible documenté |
 | `09_final_smoke_test_and_export.ipynb` | Sarah | Checklist de livraison | Qualité scientifique complète | `outputs/final_delivery_check.csv` |
 
+## Archive
+
+Le dossier `notebooks/archive/` conserve des notebooks brouillons ou remplacés par la série officielle ci-dessus.
+Ils ne sont pas supprimés afin de garder l'historique du travail, mais ils ne sont pas les supports principaux de soutenance.
+
 ## Validation technique vs validation médicale
 
 Les notebooks valident surtout le comportement logiciel: fichiers présents, JSON valide,

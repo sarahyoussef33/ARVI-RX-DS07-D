@@ -39,6 +39,11 @@ streamlit run app/streamlit_app.py
 
 Pour la chaÃ®ne donnees reelles + MedGemma, voir `docs/real_data_medgemma.md`.
 Le mode `mock_medgemma` permet de tester le flux sans acces Hugging Face/GPU.
+Pour la demonstration principale sur PC local limite en RAM/VRAM, utiliser
+`remote_medgemma`: Streamlit envoie l'image et le prompt strict vers une API
+Colab/ngrok ou MedGemma tourne sur GPU. RSNA sert aux tests et a l'evaluation
+sur splits separes; aucun entrainement complet de MedGemma n'a ete realise. Le
+prototype n'est pas valide cliniquement et LoRA/QLoRA reste une piste future.
 
 ## Smoke test du dépôt
 
@@ -83,22 +88,31 @@ curl -X POST "http://127.0.0.1:8000/predict" \
 
 La réponse doit contenir une classe, une confiance, des observations visuelles, une justification, des limites et l'avertissement non clinique.
 
-## Organisation
+## Structure du repo
 
 ```text
 assistant-radiologue-virtuel/
 ├── README.md
-├── docs/          # appel d'offre, architecture, éthique, évaluation
-├── data/          # cas synthétiques et images jouet
-├── prompts/       # prompt baseline, prompt amélioré, schéma JSON
-├── src/           # inférence jouet, garde-fous, métriques, SQLite
-├── api/           # FastAPI
-├── app/           # Streamlit / Gradio
-├── eval/          # évaluation, sorties CSV/JSON, registre d'erreurs
-├── tests/         # smoke tests et contrat minimal
-├── notebooks/     # notebooks de démarrage
-└── finetuning/    # stubs expérimentaux, non obligatoires
+├── app/                         # interface Streamlit principale
+├── api/                         # API FastAPI de démonstration
+├── src/                         # pipeline, garde-fous, modèles, logs SQLite
+├── eval/                        # script d'évaluation et registres génériques
+├── tests/                       # smoke tests et contrats logiciels
+├── docs/                        # rapports, architecture, éthique, structure
+├── notebooks/                   # notebooks officiels de pédagogie
+├── notebooks/archive/           # notebooks brouillons conservés, non supprimés
+├── outputs_remote_medgemma_20/  # livrable d'évaluation remote MedGemma
+├── data/                        # metadata, splits, images synthétiques, RSNA local
+├── prompts/                     # prompts et contrat JSON
+└── finetuning/                  # stubs expérimentaux, non exécutés
 ```
+
+Voir `docs/repo_structure.md` pour le détail : rôle des dossiers, notebooks utiles,
+résultats à conserver, commandes Streamlit, évaluation et relance Colab/ngrok.
+
+Les sorties intermédiaires `outputs_*` restent locales par défaut. Le dossier
+`outputs_remote_medgemma_20/` est le livrable d'évaluation à conserver pour la
+soutenance.
 
 ## Livrables attendus
 

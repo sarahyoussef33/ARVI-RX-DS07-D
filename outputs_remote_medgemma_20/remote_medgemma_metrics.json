@@ -1,0 +1,10 @@
+{
+  "n": 20,
+  "accuracy": 0.8,
+  "macro_f1": 0.532,
+  "json_valid_rate": 1.0,
+  "warning_rate": 1.0,
+  "uncertain_rate": 0.0,
+  "latency_median_ms": 21976.0,
+  "interpretation": "technical validation only; not medical performance"
+}

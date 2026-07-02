@@ -1,0 +1,4 @@
+class,tn,fp,specificity
+normal,7,0,1.0
+suspected_opacity,9,4,0.6923
+uncertain,20,0,1.0

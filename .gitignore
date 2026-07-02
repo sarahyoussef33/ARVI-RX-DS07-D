@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+pytest-cache-files-*/
 .ipynb_checkpoints/
 tmp_uploads/
 medical_ai_evidence.sqlite
@@ -10,6 +11,11 @@ eval/outputs/
 *.sqlite-*
 outputs/
 outputs_*/
+!outputs_remote_medgemma_20/
+!outputs_remote_medgemma_20/*.csv
+!outputs_remote_medgemma_20/*.json
+!outputs_remote_medgemma_20/*.md
+!outputs_remote_medgemma_20/assistant_radio.sqlite
 data/kaggle_raw/
 data/real_images/*
 !data/real_images/.gitkeep
@@ -18,6 +24,18 @@ data/splits/*.csv
 !data/splits/.gitkeep
 .env
 .DS_Store
+*.log
+
+# Model and training artifacts are intentionally not versioned.
+checkpoints/
+model_checkpoints/
+wandb/
+mlruns/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
 
 # Local/professor visual material
 assets/

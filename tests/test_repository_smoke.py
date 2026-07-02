@@ -18,6 +18,7 @@ from src.guardrails import WARNING_TEXT, apply_safety_guardrails, validate_predi
 from src.inference import toy_predict
 from src.metrics import summarize_metrics
 from src.models.medgemma_predictor import parse_medgemma_response
+from src.models.remote_medgemma_client import normalize_remote_prediction, remote_medgemma_predict, validate_remote_payload
 from src.pipeline import run_pipeline
 
 
@@ -40,10 +41,12 @@ def test_repository_student_contract_is_present() -> None:
         "src/inference.py",
         "src/guardrails.py",
         "src/models/medgemma_predictor.py",
+        "src/models/remote_medgemma_client.py",
         "src/pipeline.py",
         "api/main.py",
         "eval/run_evaluation.py",
         "docs/real_data_medgemma.md",
+        "notebooks/remote_medgemma_api_colab.ipynb",
         "prompts/json_schema.md",
     ]
     forbidden_paths = [
@@ -148,6 +151,65 @@ def test_medgemma_parser_falls_back_on_malformed_response() -> None:
     assert pred["predicted_class"] == "uncertain"
     assert pred["warning"] == WARNING_TEXT
     assert "Invalid MedGemma JSON response" in pred["justification"]
+
+
+def test_medgemma_parser_accepts_json_surrounded_by_text() -> None:
+    text = """
+    Voici la sortie:
+    {"class": "pneumonia_suspected", "confidence": 0.71, "observations": ["opacity prudente"], "justification": "Signal visuel limite.", "limits": "prototype", "warning": "non medical"}
+    Fin.
+    """
+    pred = parse_medgemma_response(text)
+
+    assert pred["predicted_class"] == "suspected_opacity"
+    assert pred["confidence"] == 0.71
+    assert pred["visual_evidence"] == ["opacity prudente"]
+
+
+def test_remote_medgemma_normalizer_accepts_remote_contract() -> None:
+    image_path = ROOT / "data" / "sample_images" / "CXR_SYN_002_suspected_opacity.png"
+    payload = {
+        "class": "pneumonia_suspected",
+        "confidence": 0.82,
+        "observations": ["possible opacite, a confirmer"],
+        "justification": "Analyse prudente du prototype.",
+        "limits": "Pas de diagnostic; contexte clinique absent.",
+        "warning": "Ce n'est pas un avis medical.",
+    }
+    pred = normalize_remote_prediction(payload, image_path)
+
+    assert pred["predicted_class"] == "suspected_opacity"
+    assert pred["confidence"] == 0.82
+    assert pred["visual_evidence"] == ["possible opacite, a confirmer"]
+    assert pred["limitations"] == ["Pas de diagnostic; contexte clinique absent."]
+
+
+def test_remote_medgemma_validation_rejects_bad_payload() -> None:
+    errors = validate_remote_payload(
+        {
+            "class": "definitely_pneumonia",
+            "confidence": 1.5,
+            "observations": "not a list",
+            "justification": "",
+            "limits": {"bad": "format"},
+            "warning": "",
+        }
+    )
+
+    assert "class must be normal, pneumonia_suspected, suspected_opacity, or uncertain" in errors
+    assert "confidence must be between 0 and 1" in errors
+    assert "observations must be a list of strings" in errors
+    assert "warning must be a non-empty string" in errors
+
+
+def test_remote_medgemma_missing_url_falls_back_to_uncertain(monkeypatch) -> None:
+    monkeypatch.delenv("REMOTE_MEDGEMMA_URL", raising=False)
+    image_path = ROOT / "data" / "sample_images" / "CXR_SYN_002_suspected_opacity.png"
+    pred = remote_medgemma_predict(image_path, remote_url="")
+
+    assert pred["predicted_class"] == "uncertain"
+    assert pred["warning"] == WARNING_TEXT
+    assert "Remote MedGemma URL missing" in pred["error_detail"]
 
 
 def test_prepare_real_dataset_script_creates_metadata_and_splits(tmp_path: Path) -> None:
